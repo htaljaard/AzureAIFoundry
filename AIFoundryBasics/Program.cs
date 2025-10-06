@@ -1,7 +1,12 @@
 ﻿using System.Diagnostics;
 using Azure.AI.Agents.Persistent;
+using Azure.AI.Projects;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var projectEndPoint = "https://ais-anabelle6.services.ai.azure.com/api/projects/SDKTest";
 var deploymentName = "gpt-4o";
@@ -9,8 +14,47 @@ var deploymentName = "gpt-4o";
 const string agentName = "IT Agent";
 const string instruction = "You are an IT support agent. Answer the user's questions to the best of your ability.";
 
-PersistentAgentsClient client = new(projectEndPoint, new DefaultAzureCredential());
+Environment.SetEnvironmentVariable("AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED ", "true");
 
+AIProjectClient projectClient = new(new Uri(projectEndPoint), new DefaultAzureCredential());
+
+var connectionString = await projectClient.Telemetry.GetApplicationInsightsConnectionStringAsync();
+
+var resourceAttributes = new Dictionary<string, object> {
+    { "service.name", "ai-foundry-demo" },
+    { "service.namespace", "asi.azure.foundry" },
+    { "service.instance.id", "agent.demo" },
+    { "gen_ai.provider.name","openai"},
+
+};
+
+var resourceBuilder = ResourceBuilder.CreateDefault().AddAttributes(resourceAttributes);
+
+using var traceProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource("ASI.AZURE.AI.AGENT.DEMO")
+    .SetResourceBuilder(resourceBuilder)
+    .AddConsoleExporter()
+    .AddAzureMonitorTraceExporter(o =>
+    {
+        o.ConnectionString = connectionString;
+    }).Build();
+
+var tracer = traceProvider.GetTracer("ASI.AZURE.AI.AGENT.DEMO");
+
+using var span = tracer.StartRootSpan("gen_ai.start_agent", SpanKind.Client,
+    initialAttributes: new SpanAttributes(
+        new Dictionary<string, object?>
+        {
+            ["gen_ai.model.deployment"] = deploymentName,
+            ["gen_ai.model.provider"] = "azure",
+            ["gen_ai.model.family"] = "gpt-4o",
+            ["gen_ai.model.version"] = "1.0.0",
+            ["gen_ai.tool.code_interpreter"] = true
+        }
+    ));
+span.AddEvent("Creating Persistent Agent Client");
+
+PersistentAgentsClient client = projectClient.GetPersistentAgentsClient(); // You could create a new persitent agent client for each agent if you want to use different agents with different instructions
 PersistentAgent agent = client.Administration.CreateAgent(
 
     model: deploymentName,
@@ -18,6 +62,17 @@ PersistentAgent agent = client.Administration.CreateAgent(
     instructions: instruction,
     tools: [new CodeInterpreterToolDefinition()]
 );
+
+using var agentSpan = tracer.StartActiveSpan("gen_ai.create_agent", SpanKind.Client,
+    initialAttributes: new SpanAttributes(
+        new Dictionary<string, object?>
+        {
+            ["gen_ai.agent.id"] = agent.Id,
+            ["gen_ai.agent.name"] = agent.Name,
+            ["gen_ai.agent.instructions"] = agent.Instructions,
+            ["gen_ai.agent.tools"] = string.Join(",", agent.Tools)
+        }
+    ));
 
 PersistentAgentThread thread = await client.Threads.CreateThreadAsync();
 
@@ -44,6 +99,7 @@ var messages = client.Messages.GetMessages(
     order: ListSortOrder.Ascending
 );
 
+using var messagesSpan = tracer.StartActiveSpan("Process Messages");
 
 foreach (PersistentThreadMessage threadMessage in messages)
 {
