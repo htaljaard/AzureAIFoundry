@@ -3,20 +3,28 @@ using Azure.AI.Agents.Persistent;
 using Azure.Identity;
 using Microsoft.Agents.AI;
 
-var projectEndPoint = "https://ais-anabelle6.services.ai.azure.com/api/projects/SDKTest";
+var projectEndPoint = Environment.GetEnvironmentVariable("PROJECT_ENDPOINT") ?? throw new ArgumentNullException("PROJECT_ENDPOINT");
+var bingConnectionId = System.Environment.GetEnvironmentVariable("BING_CONNECTION_ID") ?? throw new ArgumentNullException("BING_CONNECTION_ID");
 var deploymentName = "gpt-4o";
 
-const string agentName = "IT Agent";
-const string instruction = "You are an IT support agent. Answer the user's questions to the best of your ability.";
+const string agentName = "Politics Agent";
+const string instruction = "You are a politics expert. Answer the user's questions to the best of your ability.";
+
 
 PersistentAgentsClient client = new(projectEndPoint, new DefaultAzureCredential());
+
+BingGroundingToolDefinition bingGroundingTool = new(
+    new BingGroundingSearchToolParameters(
+        [new BingGroundingSearchConfiguration(bingConnectionId)]
+    )
+);
 
 PersistentAgent agent = client.Administration.CreateAgent(
 
     model: deploymentName,
     name: agentName,
     instructions: instruction,
-    tools: [new CodeInterpreterToolDefinition()]
+    tools: [bingGroundingTool]
 );
 
 PersistentAgentThread thread = await client.Threads.CreateThreadAsync();
@@ -24,7 +32,7 @@ PersistentAgentThread thread = await client.Threads.CreateThreadAsync();
 client.Messages.CreateMessage(
     threadId: thread.Id,
     role: MessageRole.User,
-    content: "Draw me a pie chart split 50 50"
+    content: "Who is the president of the United States?"
 );
 
 ThreadRun run = client.Runs.CreateRun(thread.Id, agent.Id);
@@ -38,6 +46,11 @@ while (run.Status == RunStatus.Queued
     || run.Status == RunStatus.InProgress
     || run.Status == RunStatus.RequiresAction);
 
+if (run.Status == RunStatus.Failed)
+{
+    Console.WriteLine($"Run failed: {run.LastError?.Message}");
+    return;
+}
 
 var messages = client.Messages.GetMessages(
     threadId: thread.Id,
