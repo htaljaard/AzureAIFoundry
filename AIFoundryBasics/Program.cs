@@ -1,13 +1,12 @@
 ﻿using System.Diagnostics;
 using Azure.AI.Agents.Persistent;
 using Azure.Identity;
-using Microsoft.Agents.AI;
 
 var projectEndPoint = Environment.GetEnvironmentVariable("PROJECT_ENDPOINT") ?? throw new ArgumentNullException("PROJECT_ENDPOINT");
 var bingConnectionId = System.Environment.GetEnvironmentVariable("BING_CONNECTION_ID") ?? throw new ArgumentNullException("BING_CONNECTION_ID");
 var deploymentName = "gpt-4o";
 
-const string agentName = "Politics Agent";
+const string agentName = "Politics Specialist Agent - Code First";
 const string instruction = "You are a politics expert. Answer the user's questions to the best of your ability.";
 
 
