@@ -38,6 +38,12 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("AIFoundryBasics"))
     .AddSource("AIFoundryBasics")
     .AddConsoleExporter()
+    .AddOtlpExporter()
+    // .AddJaegerExporter(options =>
+    // {
+    //     options.AgentHost = "localhost";
+    //     options.AgentPort = 6831;
+    // })
     .AddAzureMonitorTraceExporter(o =>
     {
         o.ConnectionString = connectionString;
@@ -47,12 +53,12 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
 Tracer tracer = tracerProvider.GetTracer("AIFoundryBasics");
 
 
-using (var span = tracer.StartActiveSpan("SPAN - AGENT", SpanKind.Client))
-{
-    var userInput = "what is the capital of france?";
+using var span = tracer.StartActiveSpan("SPAN - AGENT", SpanKind.Client);
 
-    var attributes = new KeyValuePair<string, object?>[]
-    {
+var userInput = "what is the capital of france?";
+
+var attributes = new KeyValuePair<string, object?>[]
+{
         new("operation_Id", span.Context.SpanId), // Unique trace/operation ID
         new("operation_ParentId", span.ParentSpanId), // Parent span ID
         new("gen_ai.system", agent.Name), // GenAI system/model
@@ -74,64 +80,63 @@ using (var span = tracer.StartActiveSpan("SPAN - AGENT", SpanKind.Client))
         new("gen_ai.evaluation.id", "AIFoundryBasics"), // Evaluation event ID (if applicable)
         new("gen_ai.choice", "user"), // GenAI role (user, assistant, system)
         new("timestamp", DateTime.UtcNow) // Event timestamp
-    };
+};
 
-    span.AddEvent(
-        name: "AddMessage",
-        attributes: new SpanAttributes(attributes)
-    );
+span.AddEvent(
+    name: "AddMessage",
+    attributes: new SpanAttributes(attributes)
+);
 
-    client.Messages.CreateMessage(
-        threadId: thread.Id,
-        role: MessageRole.User,
-        content: userInput
-    );
+client.Messages.CreateMessage(
+    threadId: thread.Id,
+    role: MessageRole.User,
+    content: userInput
+);
 
-    span.AddEvent(
-        name: "CreateRun",
-        attributes: new SpanAttributes(attributes)
-    );
+span.AddEvent(
+    name: "CreateRun",
+    attributes: new SpanAttributes(attributes)
+);
 
-    ThreadRun run = client.Runs.CreateRun(thread.Id, agent.Id);
-    do
+ThreadRun run = client.Runs.CreateRun(thread.Id, agent.Id);
+do
+{
+    Thread.Sleep(TimeSpan.FromMilliseconds(500));
+    run = client.Runs.GetRun(thread.Id, run?.Id);
+}
+while (run.Status == RunStatus.Queued
+    || run.Status == RunStatus.InProgress
+    || run.Status == RunStatus.RequiresAction);
+
+var messages = client.Messages.GetMessages(
+    threadId: thread.Id,
+    order: ListSortOrder.Ascending
+);
+
+foreach (PersistentThreadMessage threadMessage in messages)
+{
+    foreach (MessageContent content in threadMessage.ContentItems)
     {
-        Thread.Sleep(TimeSpan.FromMilliseconds(500));
-        run = client.Runs.GetRun(thread.Id, run?.Id);
-    }
-    while (run.Status == RunStatus.Queued
-        || run.Status == RunStatus.InProgress
-        || run.Status == RunStatus.RequiresAction);
-
-    var messages = client.Messages.GetMessages(
-        threadId: thread.Id,
-        order: ListSortOrder.Ascending
-    );
-
-    foreach (PersistentThreadMessage threadMessage in messages)
-    {
-        foreach (MessageContent content in threadMessage.ContentItems)
+        switch (content)
         {
-            switch (content)
-            {
-                case MessageTextContent textItem:
-                    Console.WriteLine($"[{threadMessage.Role}]: {textItem.Text}");
-                    break;
-                case MessageImageFileContent imageFileContent:
-                    Console.WriteLine($"[{threadMessage.Role}]: Image content file ID = {imageFileContent.FileId}");
-                    BinaryData imageContent = client.Files.GetFileContent(imageFileContent.FileId);
-                    string tempFilePath = Path.Combine(AppContext.BaseDirectory, $"{Guid.NewGuid()}.png");
-                    File.WriteAllBytes(tempFilePath, imageContent.ToArray());
-                    client.Files.DeleteFile(imageFileContent.FileId);
+            case MessageTextContent textItem:
+                Console.WriteLine($"[{threadMessage.Role}]: {textItem.Text}");
+                break;
+            case MessageImageFileContent imageFileContent:
+                Console.WriteLine($"[{threadMessage.Role}]: Image content file ID = {imageFileContent.FileId}");
+                BinaryData imageContent = client.Files.GetFileContent(imageFileContent.FileId);
+                string tempFilePath = Path.Combine(AppContext.BaseDirectory, $"{Guid.NewGuid()}.png");
+                File.WriteAllBytes(tempFilePath, imageContent.ToArray());
+                client.Files.DeleteFile(imageFileContent.FileId);
 
-                    ProcessStartInfo psi = new()
-                    {
-                        FileName = tempFilePath,
-                        UseShellExecute = true
-                    };
-                    Process.Start(psi);
-                    break;
-            }
+                ProcessStartInfo psi = new()
+                {
+                    FileName = tempFilePath,
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+                break;
         }
     }
-
 }
+
