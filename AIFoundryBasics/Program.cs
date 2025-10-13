@@ -24,7 +24,7 @@ string connectionString = await projectClient.Telemetry.GetApplicationInsightsCo
 ResourceBuilder resourceBuilder = ResourceBuilder.CreateDefault()
     .AddService(telemetrySource);
 
-using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()    
+using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(resourceBuilder)
     .AddSource(telemetrySource)
     .AddOtlpExporter()
@@ -35,30 +35,24 @@ using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     })
     .Build();
 
-ActivitySource source = new(telemetrySource);
 
-using var activity = source.StartActivity("Create and Run AI Agent", ActivityKind.Client);
+var tracer = tracerProvider.GetTracer(telemetrySource);
 
+
+using var span = tracer.StartActiveSpan("Create and Run AI Agent", SpanKind.Client);
+
+span.AddEvent("Starting to create and run AI Agent");
 AIAgent agent = persistentAgentClient.CreateAIAgent(
             name: agentName,
             instructions: instruction,
             model: deploymentName
-            );
-            // .AsBuilder()
-            // .UseOpenTelemetry(telemetrySource)
-            // .Build();
+            ) .AsBuilder()
+            .UseOpenTelemetry(sourceName: telemetrySource)
+            .Build();
 
 
-using (var activity2 = source.StartActivity("Run AI Agent", ActivityKind.Client))
-{
+span.AddEvent("AI Agent created successfully");
+span.AddEvent("Running AI Agent");
+var response = await agent.RunAsync("My computer is running slow. Can you help me fix it?");
 
-    var response = await agent.RunAsync("My computer is running slow. Can you help me fix it?");
-
-    using (var activity3 = source.StartActivity("Run Complete", ActivityKind.Client))
-    {
-        activity3?.SetTag("agent.response", response.ToString());
-    }
-
-};
-
-tracerProvider.Shutdown();
+span.AddEvent("AI Agent run completed");
