@@ -39,11 +39,6 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .AddSource("AIFoundryBasics")
     .AddConsoleExporter()
     .AddOtlpExporter()
-    // .AddJaegerExporter(options =>
-    // {
-    //     options.AgentHost = "localhost";
-    //     options.AgentPort = 6831;
-    // })
     .AddAzureMonitorTraceExporter(o =>
     {
         o.ConnectionString = connectionString;
