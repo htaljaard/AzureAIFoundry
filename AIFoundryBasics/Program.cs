@@ -5,6 +5,8 @@ using Azure.AI.Projects;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
@@ -26,10 +28,12 @@ string connectionString = await projectClient.Telemetry.GetApplicationInsightsCo
 ResourceBuilder resourceBuilder = ResourceBuilder.CreateDefault()
     .AddService(telemetrySource);
 
+AppContext.SetSwitch("Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnosticsSensitive", true);
+
 using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(resourceBuilder)
     .AddSource(telemetrySource)
-    .AddOtlpExporter()
+    .AddSource("Microsoft.SemanticKernel*")
     .AddConsoleExporter()
     .AddAzureMonitorTraceExporter(o =>
     {
@@ -37,15 +41,30 @@ using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     })
     .Build();
 
-AppContext.SetSwitch("Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnosticsSensitive", true);
+using var logger = LoggerFactory.Create(builder =>
+{
+    builder
+    .AddOpenTelemetry(options =>
+    {
+        options.SetResourceBuilder(resourceBuilder)
+        .AddAzureMonitorLogExporter(o => o.ConnectionString = connectionString);
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+    })
+        .SetMinimumLevel(LogLevel.Debug);
+});
+
 
 var kernelBuilder = Kernel.CreateBuilder()
+
     .AddAzureOpenAIChatCompletion(
         deploymentName: deploymentName,
-        endpoint: "https://ais-anabelle6.services.ai.azure.com/",
+        endpoint: "https://ais-anabelle6.openai.azure.com/",
         apiKey: "77bd0808c8ac4ffeba4e833786044dd2"
     );
+    
+kernelBuilder.Services.AddSingleton(logger);
 
 var kernel = kernelBuilder.Build();
 
-await kernel.InvokePromptAsync("Hello World!");
+Console.WriteLine(await kernel.InvokePromptAsync("Hello World!"));
