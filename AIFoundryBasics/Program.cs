@@ -22,49 +22,43 @@ PersistentAgentsClient persistentAgentClient = projectClient.GetPersistentAgents
 string connectionString = await projectClient.Telemetry.GetApplicationInsightsConnectionStringAsync();
 
 ResourceBuilder resourceBuilder = ResourceBuilder.CreateDefault()
-    .AddService(telemetrySource)
-    .AddTelemetrySdk();
+    .AddService(telemetrySource);
 
-
-TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .AddSource(telemetrySource)
+using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()    
     .SetResourceBuilder(resourceBuilder)
-    .AddConsoleExporter() 
-    .AddJaegerExporter(o =>
-    {
-        o.AgentHost = "localhost";
-        o.AgentPort = 6831;
-    })
+    .AddSource(telemetrySource)
+    .AddOtlpExporter()
+    .AddConsoleExporter()
     .AddAzureMonitorTraceExporter(o =>
     {
         o.ConnectionString = connectionString;
     })
     .Build();
 
-var tracer = tracerProvider.GetTracer(telemetrySource);
+ActivitySource source = new(telemetrySource);
 
-using var span = tracer.StartActiveSpan("Create and Run AI Agent");
-
-span.AddEvent("Creating AI Agent");
+using var activity = source.StartActivity("Create and Run AI Agent", ActivityKind.Client);
 
 AIAgent agent = persistentAgentClient.CreateAIAgent(
             name: agentName,
             instructions: instruction,
             model: deploymentName
-            ).AsBuilder()
-            .UseOpenTelemetry(telemetrySource)
-            .Build();
-
-span.AddEvent("Running AI Agent");
-
-
-var response = await agent.RunAsync("My computer is running slow. Can you help me fix it?");
-
-Console.WriteLine(response);
-
-span.AddEvent("AI Agent Run Complete");
-
-tracerProvider.Dispose();
+            );
+            // .AsBuilder()
+            // .UseOpenTelemetry(telemetrySource)
+            // .Build();
 
 
+using (var activity2 = source.StartActivity("Run AI Agent", ActivityKind.Client))
+{
 
+    var response = await agent.RunAsync("My computer is running slow. Can you help me fix it?");
+
+    using (var activity3 = source.StartActivity("Run Complete", ActivityKind.Client))
+    {
+        activity3?.SetTag("agent.response", response.ToString());
+    }
+
+};
+
+tracerProvider.Shutdown();
