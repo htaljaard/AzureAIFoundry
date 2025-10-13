@@ -1,9 +1,11 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using Azure.AI.Agents.Persistent;
 using Azure.AI.Projects;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
+using Microsoft.SemanticKernel;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -35,24 +37,15 @@ using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     })
     .Build();
 
+AppContext.SetSwitch("Microsoft.SemanticKernel.Experimental.GenAI.EnableOTelDiagnosticsSensitive", true);
 
-var tracer = tracerProvider.GetTracer(telemetrySource);
+var kernelBuilder = Kernel.CreateBuilder()
+    .AddAzureOpenAIChatCompletion(
+        deploymentName: deploymentName,
+        endpoint: "https://ais-anabelle6.services.ai.azure.com/",
+        apiKey: "77bd0808c8ac4ffeba4e833786044dd2"
+    );
 
+var kernel = kernelBuilder.Build();
 
-using var span = tracer.StartActiveSpan("Create and Run AI Agent", SpanKind.Client);
-
-span.AddEvent("Starting to create and run AI Agent");
-AIAgent agent = persistentAgentClient.CreateAIAgent(
-            name: agentName,
-            instructions: instruction,
-            model: deploymentName
-            ) .AsBuilder()
-            .UseOpenTelemetry(sourceName: telemetrySource)
-            .Build();
-
-
-span.AddEvent("AI Agent created successfully");
-span.AddEvent("Running AI Agent");
-var response = await agent.RunAsync("My computer is running slow. Can you help me fix it?");
-
-span.AddEvent("AI Agent run completed");
+await kernel.InvokePromptAsync("Hello World!");
