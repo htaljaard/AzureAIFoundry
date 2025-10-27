@@ -26,8 +26,7 @@ ResourceBuilder resourceBuilder = ResourceBuilder.CreateDefault()
 
 using TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(resourceBuilder)
-    .AddSource(telemetrySource)
-    .AddOtlpExporter()
+    .AddSource(telemetrySource) 
     .AddConsoleExporter()
     .AddAzureMonitorTraceExporter(o =>
     {
