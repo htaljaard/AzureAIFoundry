@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="AppHost/AppHost.csproj" Id="092d4fbc-75cd-42f1-93a2-0c35f863eb43" />
+  <Project Path="ChatAPI/ChatAPI.csproj" />
+  <Project Path="ServiceDefaults/ServiceDefaults.csproj" Id="560198e0-56aa-4572-8bcb-e9fa874e809a" />
+</Solution>
