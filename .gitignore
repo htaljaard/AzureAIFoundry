@@ -1,0 +1,6 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/Aspire/AspireAIChat/AppHost/appsettings.Development.json
+/Aspire/AspireAIChat/ChatAPI/appsettings.Development.json
